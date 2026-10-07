@@ -1,0 +1,233 @@
+---
+title: "Assessment 1 — MATH38161"
+author: "Louis Bolton"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    fig_caption: yes
+    number_sections: true
+mathspec: true
+fontsize: 11pt
+papersize: a4
+urlcolor: blue
+---
+\section{Introduction}
+This report analyses a subset of the MNIST handwritten digit database containing 3,000 grayscale images of digits 5, 6, and 7, each represented by 784 pixel values. The aim is to explore the data using unsupervised learning methods, focusing on dimensionality reduction and clustering. We apply Principal Component Analysis (PCA) first to reduce the dimensionality from 784 to 20 components, allowing us to visualise the data in a lower-dimensional space. We then perform a clustering using both K-means and hierarchical methods, comparing results to assess accuracy and misclassifications. Finally, we use eigen decomposition, and produce reduced order reconstructions of digit images to evaluate how well a small number of components can approximate the original data. The report is structured by tasks, with each section addressing a specific method, followed by a conclusion summarizing our findings.
+     
+The following code was given to us:
+```{r, }
+### NOTE: you MUST first download the Text document called digit.txt ###
+
+read_mat<-as.matrix(read.table("digit.txt",sep=","))
+dim(read_mat)
+
+image_mat<-matrix(0,3000,784)
+image_mat[,1:784]<-read_mat[,2:785]
+label<-read_mat[,1]
+
+obs_5<-image_mat[100,]
+obs_6<-image_mat[1100,]
+obs_7<-image_mat[2100,]
+```
+
+```{r image_data_plot, echo=TRUE, eval=TRUE, fig.height = 3, fig.width = 2, fig.show ="hold"}
+ image(1:28, 1:28, matrix(obs_5, nrow=28)[ , 28:1],
+ col = gray(seq(0, 1, 0.05)), xlab = "", ylab="")
+ image(1:28, 1:28, matrix(obs_6, nrow=28)[ , 28:1],
+ col = gray(seq(0, 1, 0.05)), xlab = "", ylab="")
+ image(1:28, 1:28, matrix(obs_7, nrow=28)[ , 28:1],
+ col = gray(seq(0, 1, 0.05)), xlab = "", ylab="")
+```
+
+# Task 1)
+
+PCA is a dimensionality reduction technique. It takes a dataset with many correlated variables and transforms it into a smaller set of new variables called principal components.
+In task 1) we perform a PCA and reduce the dimensions of the original data from 784 to 20 by taking the first 20 components of PCA transformation. This is important because many pixels are correlated meaning that we can reduce the dimension while still capturing most of the variance.
+
+```{r, cache=TRUE,}
+pca.out = prcomp(image_mat)
+pca_scores_20 = pca.out$x[, 1:20]
+```
+
+We now take the first two principal components and plot with digit labels to visualise how the digits separate in reduced space.
+```{r}
+plot(pca.out$x[, 1], pca.out$x[, 2],
+     col = c("red", "black", "green"),
+       pch = c(17, 16, 18),
+     xlab = "Principal Component 1",
+     ylab = "Principal Component 2",
+     main = "PCA: PC1 vs PC2")
+legend("topright", legend = c("5", "6", "7"),
+       col = c("red", "black", "green"),
+       pch = c(17, 16, 18), title = "Digit")
+```
+The plot shows a mix of clusters of the digits 5, 6 and 7, showing no clear outline of groups.
+
+Let us now compute the proportion of variance explained by each principal component and plot the first 20 components.
+```{r}
+variance_explained = (pca.out$sdev^2) / sum(pca.out$sdev^2)
+
+plot(variance_explained[1:20], type = "b", pch = 19, col = "blue",
+     xlab = "Principal Component Number",
+     ylab = "Proportion of Variance Explained", 
+     main = "PCA Scree Plot")
+
+plot(variance_explained[1:20], type = "b", pch = 19, col = "blue",
+     xlab = "Principal Component Number",
+     ylab = "Proportion of Variance Explained", ylim=c(0,0.8), 
+     main = "PCA Scree Plot")
+cumulative_variance = cumsum(variance_explained)
+lines(cumulative_variance[1:20], type = "b", pch = 17, col = "red")
+legend("right", legend = c("Individual", "Cumulative"),
+       col = c("blue", "red"), pch = c(19, 17))
+```
+The first scree plot shows a sharp drop after the first few components, indicating that most of the variance is captured by the first 4 components. This supports dimensionality reduction, as retaining 20 components is sufficient to preserve the majority of the information. When we add the cumulative variance, we notice a rapid rise, with the first 4 components explaining almost 40% of the cumulative variance and the first 20 explain just over 60% of the cumulative variance.
+
+# Task 2)
+
+With the reduced dataset from PCA (20 components), we now apply clustering methods to group the digit images without using their labels. The goal is to compare the performance of K-means and hierarchical clustering and evaluate misclassifications.
+
+## 2) i)
+We first set the number of clusters to three, corresponding to digits 5, 6, and 7.
+```{r}
+kmeans_result = kmeans(pca_scores_20, centers = 3, nstart = 25)
+
+table(label, kmeans_result$cluster)
+```
+We get a table where digits 5 and 7 are classified with high accuracy, whereas 6 has 16.1% of its data has been misclassified, this is likely because digit 6 lies visually between 5 and 7, so some points are closer to the wrong cluster center. Additionally, the table tells us that cluster 1 represents the digit 5, cluster 2 digit 6 and cluster 3 digit 7. Overall, K-means captures the structure but struggles with separating digit 6 cleanly.
+
+We now perform hierarchical clustering, using Euclidian distances, as is default, and apply different linkage methods in order to compare with the k-means clustering and to one another.
+
+```{r}
+dmat = dist(pca_scores_20, method = "euclidean")
+
+hc_ward     = hclust(dmat, method = "ward.D2")
+hc_average  = hclust(dmat, method = "average")
+hc_complete = hclust(dmat, method = "complete")
+hc_single   = hclust(dmat, method = "single")
+
+gr_ward     = cutree(hc_ward, k = 3)
+gr_average  = cutree(hc_average, k = 3)
+gr_complete = cutree(hc_complete, k = 3)
+gr_single   = cutree(hc_single, k = 3)
+
+table(label, gr_ward)
+table(label, gr_average)
+table(label, gr_complete)
+table(label, gr_single)
+
+methods = list(
+  Kmeans = kmeans_result$cluster,
+  Ward   = gr_ward,
+  Average= gr_average,
+  Complete= gr_complete,
+  Single = gr_single)
+
+misclassification_table = sapply(methods, function(clusters) {
+  tab = table(label, clusters)
+  apply(tab, 1, function(row) {
+    total = sum(row)
+    correct = max(row)
+    misclassified = total - correct
+    round(100 * misclassified / total, 2)})
+  })
+misclassification_table
+```
+Ward’s method clearly performs best because it minimizes within‑cluster variance, producing compact and well‑separated groups that almost perfectly match the true digit labels, with only a handful of misclassifications. Average linkage also performs strongly but is slightly less precise, as averaging distances allows a few points to drift into the wrong cluster. Complete linkage, which relies on maximum distances, fragments the digits and mixes classes heavily, while single linkage suffers from the chaining effect and collapses nearly all points into one cluster, explaining the lack of missclassifications in the table above. The comparison shows that Ward’s variance‑minimizing criterion is most effective for this dataset, while the other linkage rules either over merge or over split the clusters.
+
+Comparing the methods, Ward’s hierarchical clustering performs best, achieving almost perfect separation of digits 5, 6, and 7. K-means is less accurate, particularly for digit 6. Ward’s method is preferred because it minimizes within-cluster variance, producing compact and well-separated clusters.
+
+## 2) ii)
+```{r, eval=FALSE}
+cutree(hc_ward, k = 3)
+```
+
+```{r}
+plot(hc_ward, hang = -1, cex = 0.4, main = "Ward.D2")
+rect.hclust(hc_ward, k = 3, border = "red")
+
+plot(pca_scores_20[,1], pca_scores_20[,2],
+     col = gr_ward, pch = gr_ward + 15,
+     xlab = "PC1", ylab = "PC2",
+     main = "Hierarchical Clustering (Ward.D2) on PCA")
+legend("topright", legend = c("5", "6", "7"),
+       col = c("red", "black", "green"),
+       pch = c(17, 16, 18),
+       title = "Digit")
+table(label, gr_ward)
+```
+Using Ward’s method, which was identified as the best performing approach in Task 2(i), we plot the hierarchical clustering dendrogram and cut the tree into three clusters. The dendrogram illustrates how observations are merged step by step, with the vertical axis representing the distance at which clusters are joined. Cutting the tree at the level corresponding to three groups yields clusters that align almost perfectly with the true digit labels. The contingency table confirms that digits 5, 6, and 7 are each assigned to distinct clusters with only a small number of misclassifications, primarily a few digit 5s grouped with digit 6. This demonstrates that Ward’s variance minimizing criterion produces compact, well separated clusters, and the dendrogram provides a clear visual justification for why this method outperforms the alternatives.
+
+# 3)
+
+## 3) i)
+
+For the eigen decomposition $\Sigma = U\Lambda U^T$, we know that $\Sigma$ is the covariance matrix for the data matrix $X$ ($n \times d$ dimensional), $\Lambda$ is a $d \times d$ diagonal matrix with positive eigenvalues $\lambda_i > 0$, and U an orthogonal $d \times d$.
+We define $T = XU$ as the principal component transformation, let us now show $X = TU^T$
+
+Let's take the definition of T and multiply it by $U^T$ on both sides to get $$TU^T = (XU)U^T$$ As U is orthogonal, $UU^T$ = $I_d$, and hence $$TU^T = X(UU^T) = XI_d = X$$ 
+
+Thus, the inverse transformation is $X = TU^T$, for the data matrix $X$.
+
+
+## 3) ii)
+In PCA, the reduced-order reconstruction of the data matrix $X$ using the first $K$ principal components is given by $\hat{X}_K = T_K U_K^T + \mu$, where $T_K$ are the scores for the first $K$ components, $U_K$ are the eigenvectors, and $\mu$ is the mean vector added back since `prcomp()` centers the data.
+
+This allows us to approximate the original data with fewer dimensions, trading off accuracy for memory efficiency.
+
+```{r}
+U = pca.out$rotation
+T = pca.out$x
+pca.out_center = pca.out$center
+
+reconstruct_pca = function(K, U, T, pca.out_center) {
+  Uk = U[, 1:K, drop = FALSE]
+  Tk = T[, 1:K, drop = FALSE]
+  Xhat = Tk %*% t(Uk)
+  Xhat = sweep(Xhat, 2, pca.out_center, "+")
+  return(Xhat)}
+
+Ks = c(1, 2, 5, 10)
+Xhat_list = setNames(lapply(Ks, reconstruct_pca, 
+                            U = U, T = T, 
+                            pca.out_center = pca.out_center),
+                     paste0("K", Ks))
+```
+We now have the reduced matrix $\hat{X}_K$ providing compressed versions of the original data. 
+
+## 3 iii)
+Instead of storing the full data matrix $X$ of size $n \times d$, PCA allows us to store only $T_k$ ($n \times K$), $U_K$ ($d \times K$), $\mu$ ($d \times 1$), where the storage cost is $Cost(K) = nK + dK +d$, compared to the full cost $Cost(full) = nd$, which gives us a compression ratio of $ratio(K) = \frac{Cost(K)}{Cost(full)}$. This demonstrates how PCA achieves data compression by reducing the number of components needed to approximate the original dataset.
+
+```{r}
+n = nrow(image_mat)
+d = ncol(image_mat)
+
+compression_stats = sapply(Ks, function(K) {
+  cost_full = n * d
+  cost_reduced = n * K + d * K + d
+  ratio = cost_reduced / cost_full
+  c(Cost_Full = cost_full,
+    Cost_Reduced = cost_reduced,
+    Compression_Ratio = ratio)})
+
+compression_stats = t(compression_stats)
+rownames(compression_stats) = paste0("K", Ks)
+compression_stats
+```
+The table shows that as $K$ increases, the reduced storage cost also increases, and smaller values of $K$ achieve stronger compression at the expense of accuracy.
+
+To illustrate the trade‑off visually, we reconstruct one digit, here, the 100th observation, which is the digit 5, using $K = 1, 2, 5, 10$ components.
+```{r}
+idx <- 100
+par(mfrow = c(1, length(Ks)))
+for (i in seq_along(Ks)) {
+  obs <- Xhat_list[[i]][idx, ]
+  image(1:28, 1:28, matrix(obs, nrow = 28)[, 28:1],
+        col = gray(seq(0, 1, 0.05)), xlab = "", ylab = "",
+        main = paste0("K = ", Ks[i]))}
+```
+For $K = 1$ and $K = 2$, the reconstruction is extremely blurred, capturing only broad variance, looking more like a 6 than a 5. At $K =5$, the digit starts to become more recognisable, though it does remain blurry. By $K = 10$, the image resembles more and more the original, however without prior knowledge we would struggle to tell whether the digit is supposed to be a 5 or a 6. This demonstrates the balance between compression and fidelity, fewer components yield stronger compression but poorer reconstructions, while more components improve accuracy at higher storage cost.
+
+# Conclusion
+
+In conclusion, this analysis shows how PCA can effectively reduce the dimensionality of high‑dimensional image data while retaining most of the variance, allowing a clearer visualisation and more efficient clustering. The comparison of clustering methods demonstrated that Ward’s hierarchical approach provided the most accurate and well separated groups, outperforming K‑means and other linkage rules. Finally, the reconstruction experiments highlighted the trade‑off between compression and fidelity, with a small number of components offering strong memory savings but blurred images, and larger numbers producing clearer approximations at higher cost. Together, these results illustrate the value of combining dimensionality reduction and clustering in unsupervised learning, and how PCA serves as a tool for data exploration and for efficient representation of complex datasets.
